@@ -51,7 +51,6 @@
             border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 16px;
             padding: 20px;
-            transition: transform 0.2s ease;
         }
 
         .card-label {
@@ -153,12 +152,6 @@
             font-size: 0.9rem;
             font-weight: 600;
             cursor: pointer;
-            transition: opacity 0.2s ease, transform 0.2s ease;
-        }
-
-        .refresh-btn:hover {
-            opacity: 0.9;
-            transform: scale(1.02);
         }
 
         .refresh-btn:active {
@@ -191,86 +184,83 @@
             { label: 'B', name: 'ceptelefondatasi.net', feedUrl: 'https://www.ceptelefondatasi.net/feed/', cssClass: 'b' }
         ];
 
-        async function fetchWithProxy(url) {
-            // allorigins JSON endpoint - en güvenilir yöntem
-            const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
-            const resp = await fetch(proxyUrl);
-            if (!resp.ok) throw new Error('Proxy hatası: ' + resp.status);
-            const json = await resp.json();
-            return json.contents;
+        // Birden fazla proxy deneriz - biri çalışmazsa diğerine geçer
+        const proxyList = [
+            url => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(url),
+            url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+            url => 'https://corsproxy.io/?' + encodeURIComponent(url)
+        ];
+
+        async function fetchWithProxy(feedUrl) {
+            let lastErr;
+            for (const mkProxy of proxyList) {
+                try {
+                    const proxyUrl = mkProxy(feedUrl);
+                    const ctrl = new AbortController();
+                    const timer = setTimeout(() => ctrl.abort(), 12000);
+                    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+                    clearTimeout(timer);
+                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                    return await resp.text();
+                } catch (e) {
+                    lastErr = e;
+                }
+            }
+            throw lastErr || new Error('Tüm proxyler başarısız');
         }
 
-        function parseRSS(xmlText) {
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(xmlText, 'text/xml');
+        function parseRSS(xml) {
+            const doc = new DOMParser().parseFromString(xml, 'text/xml');
             const item = doc.querySelector('item');
             if (!item) throw new Error('Makale bulunamadı');
 
-            let title = '';
-            const titleEl = item.querySelector('title');
-            if (titleEl) {
-                title = titleEl.textContent;
-                // CDATA temizle
-                title = title.replace(/^\s*<!\[CDATA\[/, '').replace(/\]\]>\s*$/, '').trim();
-            }
-
+            let title = item.querySelector('title')?.textContent || 'Başlık yok';
+            title = title.replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '').trim();
             const link = item.querySelector('link')?.textContent?.trim() || '#';
             const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
-            return { title: title || 'Başlık yok', link, pubDate: formatDate(pubDate) };
+
+            return { title, link, pubDate: formatDate(pubDate) };
         }
 
-        function formatDate(dateStr) {
-            if (!dateStr) return 'Tarih bilinmiyor';
+        function formatDate(ds) {
+            if (!ds) return 'Tarih bilinmiyor';
             try {
-                const d = new Date(dateStr);
-                if (isNaN(d.getTime())) return dateStr;
-                const pad = n => String(n).padStart(2, '0');
-                return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-            } catch { return dateStr; }
+                const d = new Date(ds);
+                if (isNaN(d)) return ds;
+                const p = n => String(n).padStart(2, '0');
+                return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+            } catch { return ds; }
         }
 
-        function renderCard(site, data, error) {
-            if (error) {
-                return `<div class="card ${site.cssClass}">
-                    <span class="card-label ${site.cssClass}">Site ${site.label}</span>
-                    <div class="site-url">${site.name}</div>
-                    <div class="error-msg">⚠️ ${error}</div>
-                </div>`;
-            }
+        function card(site, data, err) {
+            if (err) return `<div class="card ${site.cssClass}">
+                <span class="card-label ${site.cssClass}">Site ${site.label}</span>
+                <div class="site-url">${site.name}</div>
+                <div class="error-msg">⚠️ ${err}</div></div>`;
             return `<div class="card ${site.cssClass}">
                 <span class="card-label ${site.cssClass}">Site ${site.label}</span>
                 <div class="site-url">${site.name}</div>
                 <div class="article-title"><a href="${data.link}" target="_blank">${data.title}</a></div>
-                <div class="date-row">
-                    <span>🕐</span>
-                    <span class="date-text">Yayınlanma: ${data.pubDate}</span>
-                </div>
-            </div>`;
+                <div class="date-row"><span>🕐</span><span class="date-text">Yayınlanma: ${data.pubDate}</span></div></div>`;
         }
 
         async function fetchAll() {
-            const container = document.getElementById('results');
-            container.innerHTML = '<div class="loading"><div class="spinner"></div><div>Siteler kontrol ediliyor...</div></div>';
+            const el = document.getElementById('results');
+            el.innerHTML = '<div class="loading"><div class="spinner"></div><div>Siteler kontrol ediliyor...</div></div>';
 
-            const results = await Promise.allSettled(
-                sites.map(async site => {
-                    const xml = await fetchWithProxy(site.feedUrl);
-                    return parseRSS(xml);
-                })
-            );
+            const res = await Promise.allSettled(sites.map(async s => {
+                const xml = await fetchWithProxy(s.feedUrl);
+                return parseRSS(xml);
+            }));
 
-            let html = '';
-            results.forEach((r, i) => {
-                html += r.status === 'fulfilled'
-                    ? renderCard(sites[i], r.value, null)
-                    : renderCard(sites[i], null, r.reason?.message || 'Bilinmeyen hata');
-            });
-            container.innerHTML = html;
+            el.innerHTML = res.map((r, i) =>
+                r.status === 'fulfilled'
+                    ? card(sites[i], r.value, null)
+                    : card(sites[i], null, r.reason?.message || 'Hata')
+            ).join('');
 
-            const now = new Date();
-            const pad = n => String(n).padStart(2, '0');
-            document.getElementById('lastCheck').textContent =
-                `Son kontrol: ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+            const n = new Date(), p = x => String(x).padStart(2, '0');
+            document.getElementById('lastCheck').textContent = 'Son kontrol: ' + p(n.getHours()) + ':' + p(n.getMinutes()) + ':' + p(n.getSeconds());
         }
 
         fetchAll();
