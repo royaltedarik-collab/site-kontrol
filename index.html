@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="tr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -33,7 +34,6 @@
             background: linear-gradient(90deg, #00d2ff, #7b2ff7);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            letter-spacing: -0.5px;
         }
 
         .cards {
@@ -51,12 +51,7 @@
             border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 16px;
             padding: 20px;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 32px rgba(123, 47, 247, 0.2);
+            transition: transform 0.2s ease;
         }
 
         .card-label {
@@ -72,19 +67,16 @@
 
         .card-label.a {
             background: linear-gradient(135deg, #00d2ff, #0083b0);
-            color: #fff;
         }
 
         .card-label.b {
             background: linear-gradient(135deg, #7b2ff7, #c471ed);
-            color: #fff;
         }
 
         .site-url {
             font-size: 0.75rem;
             color: rgba(255, 255, 255, 0.45);
             margin-bottom: 10px;
-            word-break: break-all;
         }
 
         .article-title {
@@ -110,10 +102,6 @@
             gap: 8px;
         }
 
-        .date-icon {
-            font-size: 1rem;
-        }
-
         .date-text {
             font-size: 0.9rem;
             font-weight: 500;
@@ -131,7 +119,7 @@
             font-size: 0.85rem;
         }
 
-        .loading .spinner {
+        .spinner {
             display: inline-block;
             width: 28px;
             height: 28px;
@@ -143,7 +131,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .error-msg {
@@ -182,89 +172,51 @@
         }
     </style>
 </head>
+
 <body>
 
     <h1>📡 Son Makale Kontrol</h1>
-
     <div class="cards" id="results">
         <div class="loading">
             <div class="spinner"></div>
             <div>Siteler kontrol ediliyor...</div>
         </div>
     </div>
-
     <button class="refresh-btn" onclick="fetchAll()">🔄 Yenile</button>
     <div class="last-check" id="lastCheck"></div>
 
     <script>
         const sites = [
-            {
-                label: 'A',
-                name: 'ceptelefondata.com',
-                feedUrl: 'http://ceptelefondata.com/feed/',
-                cssClass: 'a'
-            },
-            {
-                label: 'B',
-                name: 'ceptelefondatasi.net',
-                feedUrl: 'https://www.ceptelefondatasi.net/feed/',
-                cssClass: 'b'
-            }
+            { label: 'A', name: 'ceptelefondata.com', feedUrl: 'http://ceptelefondata.com/feed/', cssClass: 'a' },
+            { label: 'B', name: 'ceptelefondatasi.net', feedUrl: 'https://www.ceptelefondatasi.net/feed/', cssClass: 'b' }
         ];
 
-        // CORS proxy alternatifleri
-        const corsProxies = [
-            url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-            url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-            url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
-        ];
-
-        async function fetchFeed(feedUrl) {
-            let lastError;
-            for (const proxyFn of corsProxies) {
-                try {
-                    const proxiedUrl = proxyFn(feedUrl);
-                    const response = await fetch(proxiedUrl, { 
-                        signal: AbortSignal.timeout(10000) 
-                    });
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    const text = await response.text();
-                    return parseFeed(text);
-                } catch (err) {
-                    lastError = err;
-                    continue;
-                }
-            }
-            throw lastError || new Error('Tüm proxy\'ler başarısız oldu');
+        async function fetchWithProxy(url) {
+            // allorigins JSON endpoint - en güvenilir yöntem
+            const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
+            const resp = await fetch(proxyUrl);
+            if (!resp.ok) throw new Error('Proxy hatası: ' + resp.status);
+            const json = await resp.json();
+            return json.contents;
         }
 
-        function parseFeed(xmlText) {
+        function parseRSS(xmlText) {
             const parser = new DOMParser();
             const doc = parser.parseFromString(xmlText, 'text/xml');
+            const item = doc.querySelector('item');
+            if (!item) throw new Error('Makale bulunamadı');
 
-            // RSS 2.0 format
-            const items = doc.querySelectorAll('item');
-            if (items.length > 0) {
-                const firstItem = items[0];
-                const title = firstItem.querySelector('title')?.textContent || 'Başlık yok';
-                const link = firstItem.querySelector('link')?.textContent || '#';
-                const pubDate = firstItem.querySelector('pubDate')?.textContent || '';
-                return { title, link, pubDate: formatDate(pubDate) };
+            let title = '';
+            const titleEl = item.querySelector('title');
+            if (titleEl) {
+                title = titleEl.textContent;
+                // CDATA temizle
+                title = title.replace(/^\s*<!\[CDATA\[/, '').replace(/\]\]>\s*$/, '').trim();
             }
 
-            // Atom format
-            const entries = doc.querySelectorAll('entry');
-            if (entries.length > 0) {
-                const firstEntry = entries[0];
-                const title = firstEntry.querySelector('title')?.textContent || 'Başlık yok';
-                const linkEl = firstEntry.querySelector('link[href]');
-                const link = linkEl ? linkEl.getAttribute('href') : '#';
-                const published = firstEntry.querySelector('published')?.textContent ||
-                                  firstEntry.querySelector('updated')?.textContent || '';
-                return { title, link, pubDate: formatDate(published) };
-            }
-
-            throw new Error('RSS içeriği bulunamadı');
+            const link = item.querySelector('link')?.textContent?.trim() || '#';
+            const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
+            return { title: title || 'Başlık yok', link, pubDate: formatDate(pubDate) };
         }
 
         function formatDate(dateStr) {
@@ -272,73 +224,57 @@
             try {
                 const d = new Date(dateStr);
                 if (isNaN(d.getTime())) return dateStr;
-
-                const day = String(d.getDate()).padStart(2, '0');
-                const month = String(d.getMonth() + 1).padStart(2, '0');
-                const year = d.getFullYear();
-                const hours = String(d.getHours()).padStart(2, '0');
-                const minutes = String(d.getMinutes()).padStart(2, '0');
-
-                return `${day}.${month}.${year} ${hours}:${minutes}`;
-            } catch {
-                return dateStr;
-            }
+                const pad = n => String(n).padStart(2, '0');
+                return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+            } catch { return dateStr; }
         }
 
         function renderCard(site, data, error) {
             if (error) {
-                return `
-                    <div class="card ${site.cssClass}">
-                        <span class="card-label ${site.cssClass}">Site ${site.label}</span>
-                        <div class="site-url">${site.name}</div>
-                        <div class="error-msg">⚠️ Veri alınamadı: ${error}</div>
-                    </div>
-                `;
-            }
-            return `
-                <div class="card ${site.cssClass}">
+                return `<div class="card ${site.cssClass}">
                     <span class="card-label ${site.cssClass}">Site ${site.label}</span>
                     <div class="site-url">${site.name}</div>
-                    <div class="article-title"><a href="${data.link}" target="_blank">${data.title}</a></div>
-                    <div class="date-row">
-                        <span class="date-icon">🕐</span>
-                        <span class="date-text">Yayınlanma: ${data.pubDate}</span>
-                    </div>
+                    <div class="error-msg">⚠️ ${error}</div>
+                </div>`;
+            }
+            return `<div class="card ${site.cssClass}">
+                <span class="card-label ${site.cssClass}">Site ${site.label}</span>
+                <div class="site-url">${site.name}</div>
+                <div class="article-title"><a href="${data.link}" target="_blank">${data.title}</a></div>
+                <div class="date-row">
+                    <span>🕐</span>
+                    <span class="date-text">Yayınlanma: ${data.pubDate}</span>
                 </div>
-            `;
+            </div>`;
         }
 
         async function fetchAll() {
             const container = document.getElementById('results');
-            container.innerHTML = `
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <div>Siteler kontrol ediliyor...</div>
-                </div>
-            `;
+            container.innerHTML = '<div class="loading"><div class="spinner"></div><div>Siteler kontrol ediliyor...</div></div>';
 
             const results = await Promise.allSettled(
-                sites.map(site => fetchFeed(site.feedUrl))
+                sites.map(async site => {
+                    const xml = await fetchWithProxy(site.feedUrl);
+                    return parseRSS(xml);
+                })
             );
 
             let html = '';
-            results.forEach((result, i) => {
-                if (result.status === 'fulfilled') {
-                    html += renderCard(sites[i], result.value, null);
-                } else {
-                    html += renderCard(sites[i], null, result.reason?.message || 'Bilinmeyen hata');
-                }
+            results.forEach((r, i) => {
+                html += r.status === 'fulfilled'
+                    ? renderCard(sites[i], r.value, null)
+                    : renderCard(sites[i], null, r.reason?.message || 'Bilinmeyen hata');
             });
-
             container.innerHTML = html;
 
             const now = new Date();
-            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-            document.getElementById('lastCheck').textContent = `Son kontrol: ${timeStr}`;
+            const pad = n => String(n).padStart(2, '0');
+            document.getElementById('lastCheck').textContent =
+                `Son kontrol: ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
         }
 
-        // Sayfa yüklendiğinde otomatik kontrol
         fetchAll();
     </script>
 </body>
+
 </html>
