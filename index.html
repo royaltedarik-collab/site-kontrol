@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Site Kontrol</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: #fff;
+        }
+
+        h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+            text-align: center;
+            background: linear-gradient(90deg, #00d2ff, #7b2ff7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .cards {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            width: 100%;
+            max-width: 440px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.07);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 16px;
+            padding: 20px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(123, 47, 247, 0.2);
+        }
+
+        .card-label {
+            display: inline-block;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }
+
+        .card-label.a {
+            background: linear-gradient(135deg, #00d2ff, #0083b0);
+            color: #fff;
+        }
+
+        .card-label.b {
+            background: linear-gradient(135deg, #7b2ff7, #c471ed);
+            color: #fff;
+        }
+
+        .site-url {
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.45);
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+
+        .article-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            line-height: 1.4;
+            margin-bottom: 12px;
+            color: #f0f0f0;
+        }
+
+        .article-title a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .article-title a:hover {
+            text-decoration: underline;
+        }
+
+        .date-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .date-icon {
+            font-size: 1rem;
+        }
+
+        .date-text {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: #a0e8ff;
+        }
+
+        .card.b .date-text {
+            color: #d4a5ff;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 30px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.85rem;
+        }
+
+        .loading .spinner {
+            display: inline-block;
+            width: 28px;
+            height: 28px;
+            border: 3px solid rgba(255, 255, 255, 0.15);
+            border-top-color: #7b2ff7;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-msg {
+            font-size: 0.8rem;
+            color: #ff6b6b;
+            margin-top: 8px;
+        }
+
+        .refresh-btn {
+            margin-top: 24px;
+            padding: 12px 32px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #7b2ff7, #00d2ff);
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        .refresh-btn:hover {
+            opacity: 0.9;
+            transform: scale(1.02);
+        }
+
+        .refresh-btn:active {
+            transform: scale(0.98);
+        }
+
+        .last-check {
+            margin-top: 12px;
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.35);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>📡 Son Makale Kontrol</h1>
+
+    <div class="cards" id="results">
+        <div class="loading">
+            <div class="spinner"></div>
+            <div>Siteler kontrol ediliyor...</div>
+        </div>
+    </div>
+
+    <button class="refresh-btn" onclick="fetchAll()">🔄 Yenile</button>
+    <div class="last-check" id="lastCheck"></div>
+
+    <script>
+        const sites = [
+            {
+                label: 'A',
+                name: 'ceptelefondata.com',
+                feedUrl: 'http://ceptelefondata.com/feed/',
+                cssClass: 'a'
+            },
+            {
+                label: 'B',
+                name: 'ceptelefondatasi.net',
+                feedUrl: 'https://www.ceptelefondatasi.net/feed/',
+                cssClass: 'b'
+            }
+        ];
+
+        // CORS proxy alternatifleri
+        const corsProxies = [
+            url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+            url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+        ];
+
+        async function fetchFeed(feedUrl) {
+            let lastError;
+            for (const proxyFn of corsProxies) {
+                try {
+                    const proxiedUrl = proxyFn(feedUrl);
+                    const response = await fetch(proxiedUrl, { 
+                        signal: AbortSignal.timeout(10000) 
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const text = await response.text();
+                    return parseFeed(text);
+                } catch (err) {
+                    lastError = err;
+                    continue;
+                }
+            }
+            throw lastError || new Error('Tüm proxy\'ler başarısız oldu');
+        }
+
+        function parseFeed(xmlText) {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(xmlText, 'text/xml');
+
+            // RSS 2.0 format
+            const items = doc.querySelectorAll('item');
+            if (items.length > 0) {
+                const firstItem = items[0];
+                const title = firstItem.querySelector('title')?.textContent || 'Başlık yok';
+                const link = firstItem.querySelector('link')?.textContent || '#';
+                const pubDate = firstItem.querySelector('pubDate')?.textContent || '';
+                return { title, link, pubDate: formatDate(pubDate) };
+            }
+
+            // Atom format
+            const entries = doc.querySelectorAll('entry');
+            if (entries.length > 0) {
+                const firstEntry = entries[0];
+                const title = firstEntry.querySelector('title')?.textContent || 'Başlık yok';
+                const linkEl = firstEntry.querySelector('link[href]');
+                const link = linkEl ? linkEl.getAttribute('href') : '#';
+                const published = firstEntry.querySelector('published')?.textContent ||
+                                  firstEntry.querySelector('updated')?.textContent || '';
+                return { title, link, pubDate: formatDate(published) };
+            }
+
+            throw new Error('RSS içeriği bulunamadı');
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return 'Tarih bilinmiyor';
+            try {
+                const d = new Date(dateStr);
+                if (isNaN(d.getTime())) return dateStr;
+
+                const day = String(d.getDate()).padStart(2, '0');
+                const month = String(d.getMonth() + 1).padStart(2, '0');
+                const year = d.getFullYear();
+                const hours = String(d.getHours()).padStart(2, '0');
+                const minutes = String(d.getMinutes()).padStart(2, '0');
+
+                return `${day}.${month}.${year} ${hours}:${minutes}`;
+            } catch {
+                return dateStr;
+            }
+        }
+
+        function renderCard(site, data, error) {
+            if (error) {
+                return `
+                    <div class="card ${site.cssClass}">
+                        <span class="card-label ${site.cssClass}">Site ${site.label}</span>
+                        <div class="site-url">${site.name}</div>
+                        <div class="error-msg">⚠️ Veri alınamadı: ${error}</div>
+                    </div>
+                `;
+            }
+            return `
+                <div class="card ${site.cssClass}">
+                    <span class="card-label ${site.cssClass}">Site ${site.label}</span>
+                    <div class="site-url">${site.name}</div>
+                    <div class="article-title"><a href="${data.link}" target="_blank">${data.title}</a></div>
+                    <div class="date-row">
+                        <span class="date-icon">🕐</span>
+                        <span class="date-text">Yayınlanma: ${data.pubDate}</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function fetchAll() {
+            const container = document.getElementById('results');
+            container.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <div>Siteler kontrol ediliyor...</div>
+                </div>
+            `;
+
+            const results = await Promise.allSettled(
+                sites.map(site => fetchFeed(site.feedUrl))
+            );
+
+            let html = '';
+            results.forEach((result, i) => {
+                if (result.status === 'fulfilled') {
+                    html += renderCard(sites[i], result.value, null);
+                } else {
+                    html += renderCard(sites[i], null, result.reason?.message || 'Bilinmeyen hata');
+                }
+            });
+
+            container.innerHTML = html;
+
+            const now = new Date();
+            const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+            document.getElementById('lastCheck').textContent = `Son kontrol: ${timeStr}`;
+        }
+
+        // Sayfa yüklendiğinde otomatik kontrol
+        fetchAll();
+    </script>
+</body>
+</html>
